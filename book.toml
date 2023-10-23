@@ -9,9 +9,9 @@ title = "时光机"
 default-theme = "rust"
 site-url = "/note/"
 no-section-label = true
-git-repository-url = "https://github.com/imxood/imxood.github.io"
-additional-js =["theme/custom/mermaid.min.js", "theme/custom/mermaid-init.js"]
-additional-css = ["theme/custom/custom.css"]
+git-repository-url = "https://github.com/451846939/TimeMachine.git"
+#additional-js =["theme/custom/mermaid.min.js", "theme/custom/mermaid-init.js"]
+#additional-css = ["theme/custom/custom.css"]
 
 [output.html.fold]
 enable = true
