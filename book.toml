@@ -1,0 +1,31 @@
+[book]
+authors = ["lin"]
+language = "en"
+multilingual = false
+src = "src"
+title = "时光机"
+
+[output.html]
+default-theme = "rust"
+site-url = "/note/"
+no-section-label = true
+git-repository-url = "https://github.com/imxood/imxood.github.io"
+additional-js =["theme/custom/mermaid.min.js", "theme/custom/mermaid-init.js"]
+additional-css = ["theme/custom/custom.css"]
+
+[output.html.fold]
+enable = true
+level = 1
+
+[output.html.playground]
+editable = true
+line-numbers = true
+
+[output.html.search]
+limit-results = 20
+use-boolean-and = true
+boost-title = 2
+boost-hierarchy = 2
+boost-paragraph = 1
+expand = true
+heading-split-level = 2
