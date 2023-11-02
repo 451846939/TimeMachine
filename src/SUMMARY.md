@@ -3,3 +3,4 @@
 -  [源码的学习方式与技巧.md](源码的学习方式与技巧.md) 
 -  [rcore]()
      -  [如何开始第一个操作系统](./os/rcore/如何开始第一个操作系统.md)
+     -  [rcore经历](./os/rcore/rcore-lab.md)
