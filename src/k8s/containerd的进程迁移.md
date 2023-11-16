@@ -8,7 +8,7 @@
 
 首先我们在pod的创建流程中，会调用CRI的`RunPodSandbox` 之后会创建一个[Bundle](https://github.com/opencontainers/runtime-spec/blob/main/bundle.md) 
 
-`Bundle` : 容器rootfs目录
+`Bundle` : rootfs+config
 
 > # containerd changes to the bundle
 >
@@ -258,7 +258,7 @@ char *command;
 	}
 ```
 
-这里首先读取了OCI规范的config.json，之后吧config.json直接修改为了当前运行的pod的namespace
+这里首先读取了OCI规范的config.json，之后把config.json直接修改为了当前运行的pod的namespace
 
 在runc里我们也可以看到读取namespace是如何读取的
 
