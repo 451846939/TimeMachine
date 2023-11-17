@@ -88,7 +88,7 @@ rust驱动和内核的关系正如下图：
 
 ![image-20231117155649678](./rust-for-linux.assets/image-20231117155649678-0215557.png)
 
-## 2. 编译 {#2}
+## 2. 编译
 
 > https://rust-for-linux.com
 >
@@ -406,7 +406,7 @@ qemu-system-aarch64 \
 
 
 
-### 2. 方法2 {#4.2}
+### 2. 方法2
 
 也可以直接下载一个[debian](https://people.debian.org/~gio/dqib/)的
 
@@ -539,7 +539,7 @@ e1000使用清华os的训练营仓库，只需要填写checkpoint即可，可以
 
 ps：linux内核其实有一份c的e1000驱动所以我们还需要关闭他们然后重新编译内核,clang和llvm推荐使用14
 
-编译内核的方法和[2.编译](#2)一样只是这里的环境需要修改按照本身的版本进行
+编译内核的方法和[2.编译](## 2. 编译)一样只是这里的环境需要修改按照本身的版本进行
 
 如果出现了bindgen 0.56.0下载不下来
 
@@ -779,7 +779,7 @@ make KDIR=/mnt/rust-for-linux/linux/build
 
 
 
-这里我们直接使用debian的镜像也就是[4.2中的方法2](#4.2)
+这里我们直接使用debian的镜像也就是[4.2中的方法2](### 2. 方法2)
 
 ```shell
 qemu-system-aarch64 -machine virt -cpu cortex-a57 -m 1G -device virtio-blk-device,drive=hd -drive file=image.qcow2,if=none,id=hd -device virtio-net-device,netdev=net -netdev user,id=net,hostfwd=tcp::2222-:22 -nographic -append "root=LABEL=rootfs console=ttyAMA0" -initrd initrd -device e1000,netdev=net0,bus=pcie.0 -netdev user,id=net0 -kernel ../arch/arm64/boot/Image
