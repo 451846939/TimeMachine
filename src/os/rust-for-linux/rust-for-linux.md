@@ -86,7 +86,7 @@ Rust for Linux 就是为了帮助实现这一目标，为 Linux 提供了 Rust �
 
 rust驱动和内核的关系正如下图：
 
-![image-20231117155649678](./rust-for-linux.assets/image-20231117155649678.png)
+![image-20231117155649678](./rust-for-linux.assets/image-20231117155649678-0215557.png)
 
 ## 2. 编译 {#2}
 
@@ -491,7 +491,7 @@ EXPORT_SYMBOL_GPL(rust_helper_pci_set_drvdata);
 - bindings_generated.rs
 - bindings_helpers_generated.rs
 
-![image-20231117154615901](./rust-for-linux.assets/image-20231117154615901-0207180.png)
+![image-20231117154615901](./rust-for-linux.assets/image-20231117154615901-0207180-0215569.png)
 
 至此可以使用`use kernel::bindings` 来使用`rust_helper_pci_set_drvdata`
 
@@ -596,7 +596,7 @@ let (rx_ring_vaddr, rx_ring_dma) = kfn.dma_alloc_coherent(alloc_rx_ring_pages);
 
 对于这里我们一定要理解ring 
 
-![image-20231117162131653](./rust-for-linux.assets/image-20231117162131653.png)
+![image-20231117162131653](./rust-for-linux.assets/image-20231117162131653-0215580.png)
 
 2. 接着我们需要分配tx_buffer和rx_buffer的内存空间 并返回dma虚拟地址和物理地址 
 
