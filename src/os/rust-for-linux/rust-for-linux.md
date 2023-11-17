@@ -84,9 +84,11 @@ Rust for Linux 就是为了帮助实现这一目标，为 Linux 提供了 Rust �
 
   - 其他清理、修复和改进。
 
+rust驱动和内核的关系正如下图：
 
+![image-20231117155649678](./rust-for-linux.assets/image-20231117155649678.png)
 
-## 2. 编译
+## 2. 编译 {#2}
 
 > https://rust-for-linux.com
 >
@@ -297,7 +299,7 @@ make -j8
 cp ~/busybox-1.36.1/busybox rust-for-linux/linux/
 ```
 
-完整的流程[busybox制作initramfs](./使用busybox制作内存文件系统initramfs.md)  在这里我们到这一步暂时就够了
+完整的流程[busybox制作initramfs](./使用busybox制作内存文件系统initramfs.md)  在这里我们到这一步暂时就够了 当然你也可以自己从[0构建一个](https://docs.kernel.org/admin-guide/initrd.html)
 
 
 
@@ -404,7 +406,7 @@ qemu-system-aarch64 \
 
 
 
-### 2. 方法2
+### 2. 方法2 {#4.2}
 
 也可以直接下载一个[debian](https://people.debian.org/~gio/dqib/)的
 
@@ -447,9 +449,447 @@ rmmod rust_helloworld
 
 
 
-## 4. 模块化驱动开发
+## 5.和内核函数互相调用
 
-todo
+由于rust-for-linux还在发展中有很多内核函数是没有被封装的，利用的是bindgen来自动生成对C（和一些C++）库的Rust FFI绑定
+
+所以我们必须要知道rust-for-linux如何调用c
+
+> https://rust-lang.github.io/rust-bindgen/introduction.html
+>
+> 这是官方文档
+>
+> 对于linux是如何使用的可以看
+>
+> https://github.com/d0u9/Linux-Device-Driver-Rust/blob/master/00_Introduction_to_Rust_Module_in_Linux/03-Rust_build_processes_in_kernel.md
+
+linux 对于bindgen的使用是命令行的方式使用，并且放在了Makeflie中处理流程如下
+
+[![Dependency Graph](./rust-for-linux.assets/dependency_graph.png)](https://github.com/d0u9/Linux-Device-Driver-Rust/blob/master/00_Introduction_to_Rust_Module_in_Linux/dependency_graph.png)
+
+所以我们怎么使用呢在` /rust/kernel/bindings_helper.h`中添加内核头文件
+
+例如:
+
+```c
+#include <linux/pci.h>
+```
+
+之后编写你的c函数比如pci中`pci_set_drvdata` 生成`rust_helper_pci_set_drvdata` rust函数
+
+```c
+#include <linux/pci.h>
+void rust_helper_pci_set_drvdata(struct pci_dev *pdev, void *data)
+{
+    pci_set_drvdata(pdev, data);
+}
+EXPORT_SYMBOL_GPL(rust_helper_pci_set_drvdata);
+```
+
+在编译内核的时候会在`/linux/build/rust/bindings`中产生下面2个文件
+
+- bindings_generated.rs
+- bindings_helpers_generated.rs
+
+![image-20231117154615901](./rust-for-linux.assets/image-20231117154615901-0207180.png)
+
+至此可以使用`use kernel::bindings` 来使用`rust_helper_pci_set_drvdata`
+
+
+
+## 6. 模块化驱动开发e1000网卡驱动
+
+> 我们可以在linux目录之外编写我们的自定义驱动模块，具体参考如下链接
+>
+> https://github.com/Rust-for-Linux/rust-out-of-tree-module
+
+### 0.基础知识
+
+>  关于e1000在MIT 6.S081中有相关的介绍
+>
+> https://pdos.csail.mit.edu/6.S081/2020/labs/net.html
+>
+> https://pdos.csail.mit.edu/6.S081/2020/readings/8254x_GBe_SDM.pdf
+
+
+
+首先我们要了解什么是网卡，网卡和操作系统的交互可以看[参考](./网卡框架.pdf)
+
+我们需要了解[e1000](./8254x_GBe_SDM.pdf) 的相关知识，重点看以下：
+
+- 第2部分是必不可少的，并提供了整个设备的概述。
+- 第3.2部分概述了数据包接收的过程。
+- 第3.3部分概述了数据包传输，以及第3.4部分。
+- 第13部分提供了E1000使用的寄存器的概述。
+- 第14部分可能有助于理解我们提供的初始化代码。
+
+
+
+### 1.环境准备
+
+#### 仓库准备
+
+这里我们使用别人已经写过的一些方法仓库不然从0开始写驱动需要进行大量的工作我这里直接fork了一份支持生成外部rust-analyzer
+
+e1000使用清华os的训练营仓库，只需要填写checkpoint即可，可以省去一些基础工作，不过建议仔细看
+
+> linux: https://github.com/451846939/rust-for-linux-e1000/tree/rust-e1000
+>
+> e1000: https://github.com/451846939/e1000-driver/
+
+ps：linux内核其实有一份c的e1000驱动所以我们还需要关闭他们然后重新编译内核,clang和llvm推荐使用14
+
+编译内核的方法和[2.编译](#2)一样只是这里的环境需要修改按照本身的版本进行
+
+如果出现了bindgen 0.56.0下载不下来
+
+可以去 https://github.com/rust-lang/rust-bindgen.git 下载然后切换分支使用cargo install 以及可以把bindgen-cli的cli去掉如下：
+
+```shell
+cargo install --locked --version $(scripts/min-tool-version.sh bindgen) bindgen
+```
+
+
+
+
+
+#### 开启代码提示
+
+linux目录中使用
+
+```shell
+make LLVM=1 O=build rust-analyzer
+```
+
+目录之外如果我们需要开启rust-analyzer提示需要在代码的src平级目录使用
+
+```shell
+make LLVM=1 -C /mnt/rust-for-linux/linux/build M=$PWD rust-analyzer
+```
+
+/mnt/rust-for-linux/linux 替换成你自己的linux目录
+
+
+
+在vscode `.vscode/settings.json`中添加如下
+
+```json
+    "rust-analyzer.linkedProjects": [
+        "${workspaceFolder}/e1000-driver/rust-project.json",
+        "${workspaceFolder}/linux/build/rust-project.json"
+    ],
+```
+
+
+
+### 2.完成checkpoint
+
+
+
+
+1. 首先在网卡驱动初始化的时候我们需要分配tx_ring和rx_ring的内存空间并返回dma虚拟地址和物理地址
+
+```rust
+let (tx_ring_vaddr, tx_ring_dma) = kfn.dma_alloc_coherent(alloc_tx_ring_pages);
+let (rx_ring_vaddr, rx_ring_dma) = kfn.dma_alloc_coherent(alloc_rx_ring_pages);
+```
+
+对于这里我们一定要理解ring 
+
+![image-20231117162131653](./rust-for-linux.assets/image-20231117162131653.png)
+
+2. 接着我们需要分配tx_buffer和rx_buffer的内存空间 并返回dma虚拟地址和物理地址 
+
+```rust
+let (mut tx_mbufs_vaddr, mut tx_mbufs_dma) =kfn.dma_alloc_coherent(alloc_tx_buffer_pages);
+let (mut rx_mbufs_vaddr, mut rx_mbufs_dma) =kfn.dma_alloc_coherent(alloc_rx_buffer_pages);
+```
+
+
+
+根据MIT 6.S081的HINT得知
+
+`e1000_transmit`的流程
+
+1. 首先，通过获取E1000_RDT控制寄存器并加一模RX_RING_SIZE，询问E1000下一个等待接收的数据包（如果有）的环索引。
+2. 然后，通过在描述符的状态部分检查E1000_RXD_STAT_DD位来检查是否有新的数据包可用。如果没有，停止。
+3. 否则，将mbuf的`m->len`更新为描述符中报告的长度。使用`net_rx()`将mbuf传递给网络栈。
+4. 然后，使用`mbufalloc()`分配一个新的mbuf以替换刚刚传递给`net_rx()`的mbuf。将其数据指针（`m->head`）编程到描述符中。将描述符的状态位清零。
+5. 最后，更新E1000_RDT寄存器为最后处理的环描述符的索引。
+
+
+
+`e1000_recv`流程：
+
+1. 通过读取E1000_TDT控制寄存器，询问E1000它期望下一个数据包的TX环索引。
+2. 然后检查环是否溢出。如果在由E1000_TDT索引的描述符中未设置E1000_TXD_STAT_DD，说明E1000尚未完成相应的先前传输请求，因此返回错误。
+3. 否则，使用`mbuffree()`释放从该描述符传输的上一个mbuf（如果有的话）。
+4. 接着，填充描述符。`m->head`指向内存中包的内容，`m->len`是包的长度。设置必要的cmd标志（查看E1000手册中的第3.3节），并储存mbuf的指针以供稍后释放。
+5. 最后，通过将E1000_TDT模TX_RING_SIZE加一来更新环位置。
+6. 如果`e1000_transmit()`成功将mbuf添加到环中，返回0。如果失败（例如，没有可用的描述符传输mbuf），返回-1，以便调用者知道释放mbuf。
+
+
+
+这个mbuffer其实就是ring 里做了一个备份
+
+3. 给寄存器设置ring
+
+```rust
+// set tx descriptor base address and tx ring length
+self.regs[E1000_TDBAL].write(self.tx_ring_dma as u32);
+self.regs[E1000_TDLEN].write((self.tx_ring.len() * size_of::<TxDesc>()) as u32);
+
+// set rx descriptor base address and rx ring length
+self.regs[E1000_RDBAL].write(self.rx_ring_dma as u32);
+self.regs[E1000_RDLEN].write((self.rx_ring.len() * size_of::<RxDesc>()) as u32);
+```
+
+
+
+4. 设置中断处理
+
+```rust
+
+// Enable interrupts
+// step1 set up irq_data
+// step2 request_irq
+// step3 set up irq_handler
+let irq_data = Box::try_new(IrqData {
+    dev_e1000: data.dev_e1000.clone(),
+    res: data.res.clone(),
+    napi: data.napi.clone(),
+})?;
+let irq_regist = request_irq(data.irq, irq_data)?;
+data.irq_handler
+    .store(Box::into_raw(Box::try_new(irq_regist)?), Ordering::Relaxed);
+```
+
+
+
+5. 收包中断处理
+
+```rust
+fn handle_rx_irq(dev: &net::Device, napi: &Napi, data: &NetData) {
+        // Exercise4 Checkpoint 1
+        let mut packets = 0;
+        let mut bytes = 0;
+        let recv_vec: Option<Vec<Vec<u8>>> = {
+            let mut dev_e1k = data.dev_e1000.lock();
+            dev_e1k.as_mut().unwrap().e1000_recv()
+        };
+        if let Some(vec) = recv_vec {
+            packets = vec.len();
+            vec.into_iter().for_each(|packet| {
+                let mut len = packet.len();
+                let skb = dev.alloc_skb_ip_align(RXBUFFER).unwrap();
+                let skb_buf =
+                    unsafe { from_raw_parts_mut(skb.head_data().as_ptr() as *mut u8, len) 						};
+                skb_buf.copy_from_slice(&packet);
+
+                skb.put(len as u32);
+                let protocol = skb.eth_type_trans(dev);
+                skb.protocol_set(protocol);
+
+                napi.gro_receive(&skb);
+
+                bytes += len;
+            });
+            pr_info!("handle_rx_irq {} packets,{} bytes\n", packets, bytes);
+        } else {
+            pr_info!("handle_rx_irq no packets\n");
+        }
+
+        data.stats
+            .rx_bytes
+            .fetch_add(bytes as u64, Ordering::Relaxed);
+        data.stats
+            .rx_packets
+            .fetch_add(packets as u64, Ordering::Relaxed);
+}
+```
+
+首先调用收包函数获取收到的包之后，copy到linux中的核心数据结构skb中设置协议栈后把skb发送到linux网络协议栈，最后更新 `data.stats` 中的 `rx_bytes` 和 `rx_packets` 统计信息
+
+
+
+6. 数据发送
+
+```rust
+  /// Corresponds to `ndo_start_xmit` in `struct net_device_ops`.
+  fn start_xmit(
+      skb: &SkBuff,
+      dev: &Device,
+      data: <Self::Data as PointerWrapper>::Borrowed<'_>,
+  ) -> NetdevTx {
+      pr_info!("start xmit\n");
+      // Exercise4 Checkpoint 2
+      skb.put_padto(bindings::ETH_ZLEN);
+      let skb_data = skb.len() - skb.data_len();
+      let skb_data = skb.head_data();
+      dev.sent_queue(skb.len());
+
+      let mut dev_e1k = data.dev_e1000.lock_irqdisable();
+      let len = dev_e1k.as_mut().unwrap().e1000_transmit(skb_data);
+      drop(dev_e1k);
+      if len < 0 {
+          pr_warn!("skb packet:{}", len);
+          return net::NetdevTx::Busy;
+      }
+      let bytes = skb.len();
+      let packets = 1;
+
+      skb.napi_consume(64);
+      data.stats
+          .tx_bytes
+          .fetch_add(bytes as u64, Ordering::Relaxed);
+
+      data.stats.tx_packets.fetch_add(packets, Ordering::Relaxed);
+      dev.completed_queue(packets as u32, bytes as u32);
+
+      return net::NetdevTx::Ok;
+  }
+```
+
+首先我们要设置以太网帧的最小长度，在设备中记录已发送的数据包长度，调用 `e1000_transmit` 方法，把数据包发送到 E1000 设备， 重新启用中断，如果发送数据包的时候没有成功，可能会存在数据正在接收的情况，所以返回Busy。之后在dev设备中记录已完成的队列和统计信息。
+
+
+
+### 3.验证
+
+> linux内核其实有一份c的e1000驱动所以我们还需要关闭它们然后重新编译内核
+>
+> ```shell
+> make ARCH=arm64 LLVM=1 O=build menuconfig
+> ```
+>
+> 使用/ 搜索e1000按数字键 就可以直接到达对应的地方，和 e1000的全部关闭然后编译
+>
+> ```shell
+> make ARCH=arm64 LLVM=1 -j8
+> ```
+
+
+
+首先编译我们的驱动
+
+```shell
+cd e1000-driver/src/linux
+make KDIR=/mnt/rust-for-linux/linux/build
+```
+
+
+
+这里我们直接使用debian的镜像也就是[4.2中的方法2](#4.2)
+
+```shell
+qemu-system-aarch64 -machine virt -cpu cortex-a57 -m 1G -device virtio-blk-device,drive=hd -drive file=image.qcow2,if=none,id=hd -device virtio-net-device,netdev=net -netdev user,id=net,hostfwd=tcp::2222-:22 -nographic -append "root=LABEL=rootfs console=ttyAMA0" -initrd initrd -device e1000,netdev=net0,bus=pcie.0 -netdev user,id=net0 -kernel ../arch/arm64/boot/Image
+```
+
+
+
+```shell
+ip address
+```
+
+我们可以看到有
+
+```text
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP mode DEFAULT group default qlen 1000
+    link/ether 52:54:00:12:34:56 brd ff:ff:ff:ff:ff:ff
+```
+
+eth0 网卡
+
+这时候我们可以用scp 把编译的ko文件复制进来
+
+```
+scp xxx@ip:/mnt/rust-for-linux/e1000-driver/src/linux/../e1000_for_linux.ko /root/
+```
+
+然后禁用我们的eth0
+
+```shell 
+ip link set eth0 down
+```
+
+加载我们用rust写的e1000的驱动
+
+```shell
+insmod e1000_for_linux.ko
+```
+
+这时候执行`ip l`会发现多了一个eth1
+
+启动eth1
+
+```shell
+ip link set eth1 up
+```
+
+由于没有分配ip所以手动分配ip
+
+因为qemu网关是10.0.2.2
+
+所以这里分配
+
+```shell
+ip addr add 10.0.2.20/24 dev eth1
+```
+
+之后执行ping
+
+```shell
+ping 10.0.2.2
+```
+
+可以看到如下打印
+
+```text
+PING 10.0.2.2 (10.0.2.2) 56(84) bytes of data.
+[  336.638258] rust_e1000dev: start xmit
+[  336.638671] rust_e1000dev: Read E1000_TDT = 0x0
+[  336.638733] rust_e1000dev: >>>>>>>>> TX PKT 60
+[  336.638844] rust_e1000dev:
+[  336.638844]
+[  336.639136] rust_e1000dev: handle_irq
+[  336.639289] rust_e1000dev: irq::Handler E1000_ICR = 0x83
+[  336.639680] rust_e1000dev: NapiPoller poll
+[  336.639777] rust_e1000dev: Read E1000_RDT + 1 = 0x0
+[  336.639814] rust_e1000dev: RX PKT 64 <<<<<<<<<
+[  336.640057] rust_e1000dev: e1000_recv
+[  336.640057]
+[  336.640605] rust_e1000dev: handle_rx_irq 1 packets, 64 bytes
+[  336.641801] rust_e1000dev: start xmit
+[  336.641883] rust_e1000dev: Read E1000_TDT = 0x1
+[  336.641890] rust_e1000dev: >>>>>>>>> TX PKT 98
+[  336.641972] rust_e1000dev:
+[  336.641972]
+[  336.642191] rust_e1000dev: handle_irq
+[  336.642366] rust_e1000dev: irq::Handler E1000_ICR = 0x83
+[  336.646625] rust_e1000dev: NapiPoller poll
+[  336.646726] rust_e1000dev: Read E1000_RDT + 1 = 0x1
+[  336.646734] rust_e1000dev: RX PKT 98 <<<<<<<<<
+[  336.646835] rust_e1000dev: e1000_recv
+[  336.646835]
+[  336.647052] rust_e1000dev: handle_rx_irq 1 packets, 98 bytes
+64 bytes from 10.0.2.2: icmp_seq=1 ttl=255 time=11.5 ms
+[  337.641037] rust_e1000dev: start xmit
+[  337.641723] rust_e1000dev: Read E1000_TDT = 0x2
+[  337.641802] rust_e1000dev: >>>>>>>>> TX PKT 98
+[  337.642021] rust_e1000dev:
+[  337.642021]
+[  337.642528] rust_e1000dev: handle_irq
+[  337.649010] rust_e1000dev: irq::Handler E1000_ICR = 0x83
+[  337.650481] rust_e1000dev: NapiPoller poll
+[  337.650852] rust_e1000dev: Read E1000_RDT + 1 = 0x2
+[  337.650886] rust_e1000dev: RX PKT 98 <<<<<<<<<
+[  337.651381] rust_e1000dev: e1000_recv
+[  337.651381]
+[  337.651737] rust_e1000dev: handle_rx_irq 1 packets, 98 bytes
+64 bytes from 10.0.2.2: icmp_seq=2 ttl=255 time=13.1 ms
+```
+
+完成了我们的e1000网卡的checkpoint编写
 
 
 
