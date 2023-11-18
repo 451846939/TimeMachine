@@ -477,6 +477,8 @@ linux 对于bindgen的使用是命令行的方式使用，并且放在了Makefli
 
 之后编写你的c函数比如pci中`pci_set_drvdata` 生成`rust_helper_pci_set_drvdata` rust函数
 
+添加在`/rust/kernel/helpers.c`中
+
 ```c
 #include <linux/pci.h>
 void rust_helper_pci_set_drvdata(struct pci_dev *pdev, void *data)
