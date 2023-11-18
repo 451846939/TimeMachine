@@ -834,6 +834,7 @@ ip link set eth1 up
 
 ```shell
 ip addr add 10.0.2.20/24 dev eth1
+ip route add default via 10.0.2.2 dev eth1
 ```
 
 之后执行ping
