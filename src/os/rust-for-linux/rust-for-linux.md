@@ -539,7 +539,7 @@ EXPORT_SYMBOL_GPL(rust_helper_pci_set_drvdata);
 
 e1000使用清华os的训练营仓库，只需要填写checkpoint即可，可以省去一些基础工作，不过建议仔细看
 
-> linux: https://github.com/451846939/rust-for-linux-e1000/tree/rust-e1000
+> linux: https://github.com/451846939/rust-for-linux/tree/rust-e1000
 >
 > e1000: https://github.com/451846939/e1000-driver/
 
