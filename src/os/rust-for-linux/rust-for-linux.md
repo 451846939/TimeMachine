@@ -107,7 +107,11 @@ rustup component add rust-src
 cargo install --locked --version $(scripts/min-tool-version.sh bindgen) bindgen-cli
 ```
 
-根据提示[官方文档](https://www.kernel.org/doc/html/next/rust/quick-start.html) 配置好你的rust环境最重要的是要注意llvm要使用16以上的版本
+根据提示[官方文档](https://www.kernel.org/doc/html/next/rust/quick-start.html) 配置好你的rust环境最重要的是要注意llvm版本
+
+> https://github.com/Rust-for-Linux/linux/blob/rust-next/Documentation/process/changes.rst
+
+
 
 这里给出llvm如何配置apt 以及如何安装clang+llvm等开发环境的文档地址： https://apt.llvm.org
 
