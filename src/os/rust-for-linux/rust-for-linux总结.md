@@ -54,14 +54,12 @@ rust是Rust支持合并到内核之前两年进行开发的原始分支。
 
 
 
-再使用 
+再使用 insmod\rmmod就可以了
 
 ```shell
 insmod rust_print.ko
 rmmod rust_print.ko
 ```
-
-就可以了
 
 
 
