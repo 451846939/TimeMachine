@@ -2,11 +2,74 @@
 
 最近需要对containerd实现进程迁移，来迁移pod，需要对containerd有一个深入的了解
 
+## [Union Mount File Systems](https://en.wikipedia.org/wiki/Union_mount)
+
+
+
+![unionfs.png](./containerd的进程迁移.assets/unionfs.png)
+
+计算机中，Union Mounting是一种**将多个不同的目录组合成一个统一的目录视图的技术**；Union Mounting技术在Linux，FreeBSD，[Plan9](https://en.wikipedia.org/wiki/Plan_9_from_Bell_Labs)中都有相似的设计；Union Mount技术并不直接参与磁盘空间结构的划分和inode的管理，它依赖并建立在现有操作系统的文件系统之上（ext4，exFAT等）。
+
+
+
+### Union Mount实现
+
+- [overlayfs](https://www.kernel.org/doc/html/latest/filesystems/overlayfs.html?highlight=overlayfs)
+- [aufs](https://en.wikipedia.org/wiki/Aufs)
+- [UnionFS](https://dl.acm.org/doi/fullHtml/10.5555/1044970.1044978)
+
+
+
+![img](./containerd的进程迁移.assets/unionfs_stacking_fanout.png)
+
+下面我们以`overlayfs`为例子看一下对应的containerd的使用
+
+我们可以看一下主流的`overlayfs`的用法：
+
+```shell
+mount -t overlay overlay -olowerdir=/lower,upperdir=/upper,workdir=/work /merged
+```
+
+有几个关键参数需要关注`lower`、`upper`、`merged` 
+
+`Workdir`必须是与`upperdir`同一文件系统上的空目录。
+
+而下面我们在containerd中提到的Bundle就是`merged`
+
+`merged` 对应目录为：`/run/containerd/io.containerd.runtime.v2.task/k8s.io/{id}`
+
+`lower`对应的目录：`/var/lib/containerd/io.containerd.content.v1.content`
+
+`upper`对应的目录：`/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs`
+
+可以看一下containerd中一个启动的container `merged`的目录
+
+![image-20240131172227656](./containerd的进程迁移.assets/image-20240131172227656.png) 
+
+```text
+root@node-2:/run/containerd/io.containerd.runtime.v2.task/k8s.io/57438e8a97fcc0a1191f872bb000b274dbf6fe1137c62e77fe3d3c799b9f1caf# ll
+total 32
+drwx------  3 root root  240 Jan 31 09:20 ./
+drwx--x--x 12 root root  240 Jan 31 09:20 ../
+-rw-r--r--  1 root root   89 Jan 31 09:20 address
+-rw-r--r--  1 root root 4399 Jan 31 09:20 config.json
+-rw-r--r--  1 root root    7 Jan 31 09:20 init.pid
+prwx------  1 root root    0 Jan 31 09:20 log|
+-rw-r--r--  1 root root    0 Jan 31 09:20 log.json
+-rw-------  1 root root   54 Jan 31 09:20 options.json
+drwxr-xr-x  1 root root 4096 Jan 31 09:20 rootfs/
+-rw-------  1 root root   14 Jan 31 09:20 runtime
+-rw-------  1 root root   32 Jan 31 09:20 shim-binary-path
+lrwxrwxrwx  1 root root  121 Jan 31 09:20 work -> /var/lib/containerd/io.containerd.runtime.v2.task/k8s.io/57438e8a97fcc0a1191f872bb000b274dbf6fe1137c62e77fe3d3c799b9f1caf/
+```
+
+
+
 
 
 ## Bundle
 
-首先我们在pod的创建流程中，会调用CRI的`RunPodSandbox` 之后会创建一个[Bundle](https://github.com/opencontainers/runtime-spec/blob/main/bundle.md) 
+首先我们在pod的创建流程中，会调用CRI的`RunPodSandbox` 之后会创建一个[Bundle](https://github.com/opencontainers/runtime-spec/blob/main/bundle.md) 这里也是容器的实际运行时用到的文件目录
 
 `Bundle` : rootfs+config
 
@@ -25,6 +88,8 @@
 在containerd中有关于OCI的标准对照
 
 > https://github.com/containerd/containerd/blob/main/docs/content-flow.md
+
+在containerd中bundle的目录为`/run/containerd/io.containerd.runtime.v2.task/k8s.io/{id}`
 
 
 
@@ -290,5 +355,40 @@ specConfig = "config.json"
 
 
 
+## 如何实现containerd的checkpoint
+
+首先我们根据上文的理解我们可以得知，checkpoint的始终是container，CRI的所有接口中几乎都是对container为单位设计的，所以我们一定要去兼容pod。
 
 
+
+/var/lib/kubelet/checkpoints
+
+
+
+首先分析CRI-O支持checkpoints做了哪些修改
+
+> https://github.com/cri-o/cri-o/commit/0244fee08468720b7acef7b4f624d7954fc93eda#diff-e88b1548794adb58564ef46a2b8b7b892ca2056d5b25646a867c4b875da9bc7f
+
+containerd以插件的形式运行镜像的各种操作
+
+```go
+plugin.Register(&plugin.Registration{
+		Type: plugin.MetadataPlugin,
+		ID:   "bolt",
+		Requires: []plugin.Type{
+			plugin.ContentPlugin,
+			plugin.SnapshotPlugin,
+		},
+		Config: &BoltConfig{
+			ContentSharingPolicy: SharingPolicyShared,
+		},
+  .....
+}
+```
+
+
+
+首先我们有2个思路。
+
+1. 直接打包成一个新的OCI镜像，添加一层新目录，之后上传这个镜像
+2. 导出当前层镜像为一个tar，之后利用这个tar来打出一个新镜像，然后上传这个镜像，之后解压处理，还需要恢复原始镜像
