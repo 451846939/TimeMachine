@@ -1,6 +1,6 @@
 # top内存读取与cgroup读取内存
 
-
+本文内核源码基于linux 6.5
 
 
 
@@ -87,11 +87,41 @@ static const char *task_show (const WIN_t *q, const proc_t *p) {
    } // end: for 'maxpflgs'
 	.......
 } // end: task_show
+
+static const char *scale_mem (int target, unsigned long num, int width, int justr) {
+#ifndef NOBOOST_MEMS
+   //                               SK_Kb   SK_Mb      SK_Gb      SK_Tb      SK_Pb      SK_Eb
+   static const char *fmttab[] =  { "%.0f", "%#.1f%c", "%#.3f%c", "%#.3f%c", "%#.3f%c", NULL };
+#else
+   static const char *fmttab[] =  { "%.0f", "%.0f%c",  "%.0f%c",  "%.0f%c",  "%.0f%c",  NULL };
+#endif
+   static char buf[SMLBUFSIZ];
+   float scaled_num;
+   char *psfx;
+   int i;
+
+   buf[0] = '\0';
+   if (Rc.zero_suppress && 0 >= num)
+      goto end_justifies;
+
+   scaled_num = num;
+   for (i = SK_Kb, psfx = Scaled_sfxtab; i < SK_Eb; psfx++, i++) {
+      if (i >= target
+      && (width >= snprintf(buf, sizeof(buf), fmttab[i], scaled_num, *psfx)))
+         goto end_justifies;
+      scaled_num /= 1024.0;
+   }
+
+   // well shoot, this outta' fit...
+   snprintf(buf, sizeof(buf), "?");
+end_justifies:
+   return justify_pad(buf, width, justr);
+} // end: scale_mem
 ```
 
 可以看到`RES`读取的是`/proc/{pid}/statm` 中的`resident`，`SHR`读取的是`share`之后计算公式如果转换为MB
 
-`({count} << Pg2K_shft) / 1024 / 1024` 其中`Pg2K_shft` 计算公式为
+`({count} << Pg2K_shft) / 1024` 其中`Pg2K_shft` 计算公式为
 
 ```c
 //一般为4096	可以运行getconf PAGE_SIZE查看
@@ -148,7 +178,141 @@ RES->resident=shared+MM_ANONPAGES
 
 
 
-先看一下memory_cgrp_subsys cgroup子系统
+对于stat文件背后调用的方法
+
+```c
+static struct cftype memory_files[] = {	
+  ....
+	{
+		.name = "stat",
+		.seq_show = memory_stat_show,
+	},
+  .....
+}
+
+static int memory_stat_show(struct seq_file *m, void *v)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_seq(m);
+	char *buf = kmalloc(PAGE_SIZE, GFP_KERNEL);
+	struct seq_buf s;
+
+	if (!buf)
+		return -ENOMEM;
+	seq_buf_init(&s, buf, PAGE_SIZE);
+	memory_stat_format(memcg, &s);
+	seq_puts(m, buf);
+	kfree(buf);
+	return 0;
+}
+static void memory_stat_format(struct mem_cgroup *memcg, struct seq_buf *s)
+{
+	if (cgroup_subsys_on_dfl(memory_cgrp_subsys))
+		memcg_stat_format(memcg, s);
+	else
+		memcg1_stat_format(memcg, s);
+	WARN_ON_ONCE(seq_buf_has_overflowed(s));
+}
+
+static void memcg_stat_format(struct mem_cgroup *memcg, struct seq_buf *s)
+{
+	int i;
+
+	/*
+	 * Provide statistics on the state of the memory subsystem as
+	 * well as cumulative event counters that show past behavior.
+	 *
+	 * This list is ordered following a combination of these gradients:
+	 * 1) generic big picture -> specifics and details
+	 * 2) reflecting userspace activity -> reflecting kernel heuristics
+	 *
+	 * Current memory state:
+	 */
+	mem_cgroup_flush_stats();
+
+	for (i = 0; i < ARRAY_SIZE(memory_stats); i++) {
+		u64 size;
+
+		size = memcg_page_state_output(memcg, memory_stats[i].idx);
+		seq_buf_printf(s, "%s %llu\n", memory_stats[i].name, size);
+
+		if (unlikely(memory_stats[i].idx == NR_SLAB_UNRECLAIMABLE_B)) {
+			size += memcg_page_state_output(memcg,
+							NR_SLAB_RECLAIMABLE_B);
+			seq_buf_printf(s, "slab %llu\n", size);
+		}
+	}
+
+	/* Accumulated memory events */
+	seq_buf_printf(s, "pgscan %lu\n",
+		       memcg_events(memcg, PGSCAN_KSWAPD) +
+		       memcg_events(memcg, PGSCAN_DIRECT) +
+		       memcg_events(memcg, PGSCAN_KHUGEPAGED));
+	seq_buf_printf(s, "pgsteal %lu\n",
+		       memcg_events(memcg, PGSTEAL_KSWAPD) +
+		       memcg_events(memcg, PGSTEAL_DIRECT) +
+		       memcg_events(memcg, PGSTEAL_KHUGEPAGED));
+
+	for (i = 0; i < ARRAY_SIZE(memcg_vm_event_stat); i++) {
+		if (memcg_vm_event_stat[i] == PGPGIN ||
+		    memcg_vm_event_stat[i] == PGPGOUT)
+			continue;
+
+		seq_buf_printf(s, "%s %lu\n",
+			       vm_event_name(memcg_vm_event_stat[i]),
+			       memcg_events(memcg, memcg_vm_event_stat[i]));
+	}
+
+	/* The above should easily fit into one page */
+	WARN_ON_ONCE(seq_buf_has_overflowed(s));
+}
+
+static inline unsigned long memcg_page_state_output(struct mem_cgroup *memcg,
+						    int item)
+{
+	return memcg_page_state(memcg, item) * memcg_page_state_unit(item);
+}
+
+unsigned long memcg_page_state(struct mem_cgroup *memcg, int idx)
+{
+	long x = READ_ONCE(memcg->vmstats->state[idx]);
+#ifdef CONFIG_SMP
+	if (x < 0)
+		x = 0;
+#endif
+	return x;
+}
+
+/* Translate stat items to the correct unit for memory.stat output */
+static int memcg_page_state_unit(int item)
+{
+	switch (item) {
+	case MEMCG_PERCPU_B:
+	case MEMCG_ZSWAP_B:
+	case NR_SLAB_RECLAIMABLE_B:
+	case NR_SLAB_UNRECLAIMABLE_B:
+	case WORKINGSET_REFAULT_ANON:
+	case WORKINGSET_REFAULT_FILE:
+	case WORKINGSET_ACTIVATE_ANON:
+	case WORKINGSET_ACTIVATE_FILE:
+	case WORKINGSET_RESTORE_ANON:
+	case WORKINGSET_RESTORE_FILE:
+	case WORKINGSET_NODERECLAIM:
+		return 1;
+	case NR_KERNEL_STACK_KB:
+		return SZ_1K;
+	default:
+		return PAGE_SIZE;
+	}
+}
+```
+
+
+
+关键代码为`memcg_page_state_output * memcg_page_state_unit`如果`PAGE_SIZE`和上述一样都是4096那么换算mb的公式为`count*4096/1024/1024` ,`memcg_page_state_output`进行了`memcg->vmstats->state[idx]`的读取，那么我们是如何写入的呢
+
+
+
+再看一下memory_cgrp_subsys cgroup子系统
 
 ```c
 struct cgroup_subsys memory_cgrp_subsys = {
@@ -171,7 +335,7 @@ struct cgroup_subsys memory_cgrp_subsys = {
 
 
 
-其中`css_rstat_flush`对应`mem_cgroup_css_rstat_flush`可以看到在memcg->vmstats->state更新数据
+其中`css_rstat_flush`对应`mem_cgroup_css_rstat_flush`可以看到在`memcg->vmstats->state`更新数据
 
 
 
@@ -272,6 +436,63 @@ unsigned long memcg_page_state(struct mem_cgroup *memcg, int idx)
 	return x;
 }
 ```
+
+
+
+`per_cpu_ptr(memcg->vmstats_percpu, cpu)`会读取我们的`vmstats_percpu`那这里又是何时修改呢
+
+在`__mod_lruvec_state`中可以看到
+
+```c
+/* Update memcg */
+__this_cpu_add(memcg->vmstats_percpu->state[idx], valDi);
+/* Update lruvec */
+__this_cpu_add(pn->lruvec_stats_percpu->state[idx],val);
+```
+
+可以追踪到`__mod_memcg_state`、`__mod_memcg_lruvec_state`
+
+```text
+__vmalloc_node_range
+								->__vmalloc_area_node
+								->mod_memcg_page_state
+								->mod_memcg_state
+								->__mod_memcg_state
+								->__this_cpu_add(memcg->vmstats_percpu->state[idx], val);
+```
+
+当然还有被动的`do_page_fault`
+
+```c
+do_page_fault
+  			->handle_mm_fault
+  			->__handle_mm_fault
+  			->handle_pte_fault
+  			->do_pte_missing
+  			->do_anonymous_page
+  			->mem_cgroup_charge
+  			->__mem_cgroup_charge
+  			->charge_memcg
+  			->mem_cgroup_charge_statistics
+
+static void mem_cgroup_charge_statistics(struct mem_cgroup *memcg,
+					 int nr_pages)
+{
+	/* pagein of a big page is an event. So, ignore page size */
+	if (nr_pages > 0)
+		__count_memcg_events(memcg, PGPGIN, 1);
+	else {
+		__count_memcg_events(memcg, PGPGOUT, 1);
+		nr_pages = -nr_pages; /* for event */
+	}
+
+	__this_cpu_add(memcg->vmstats_percpu->nr_page_events, nr_pages);
+}
+```
+
+以上就是增加cgroup内存计数的流程
+
+
 
 
 
