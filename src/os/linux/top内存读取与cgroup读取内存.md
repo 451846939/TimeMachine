@@ -87,7 +87,11 @@ static const char *task_show (const WIN_t *q, const proc_t *p) {
    } // end: for 'maxpflgs'
 	.......
 } // end: task_show
+```
 
+当然重点函数是`scale_mem` 我们来看一下定义
+
+```c
 static const char *scale_mem (int target, unsigned long num, int width, int justr) {
 #ifndef NOBOOST_MEMS
    //                               SK_Kb   SK_Mb      SK_Gb      SK_Tb      SK_Pb      SK_Eb
@@ -118,6 +122,8 @@ end_justifies:
    return justify_pad(buf, width, justr);
 } // end: scale_mem
 ```
+
+
 
 可以看到`RES`读取的是`/proc/{pid}/statm` 中的`resident`，`SHR`读取的是`share`之后计算公式如果转换为MB
 
