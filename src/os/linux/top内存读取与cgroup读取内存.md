@@ -162,9 +162,9 @@ enum {
 
 可以看到计算如下
 
-SHR->shared=MM_FILEPAGES+MM_SHMEMPAGES 
+**SHR->shared=MM_FILEPAGES+MM_SHMEMPAGES **
 
-RES->resident=shared+MM_ANONPAGES
+**RES->resident=shared+MM_ANONPAGES**
 
 
 
@@ -177,16 +177,20 @@ static inline unsigned long get_mm_counter(struct mm_struct *mm, int member)
 }
 ```
 
+
+
+
+
 什么时候进行的计数呢流程如下:
 
 ```c
 do_page_fault
-  			->handle_mm_fault
-  			->__handle_mm_fault
-  			->handle_pte_fault
-  			->do_pte_missing
-  			->do_anonymous_page
-  			->inc_mm_counter
+      ->handle_mm_fault
+      ->__handle_mm_fault
+      ->handle_pte_fault
+      ->do_pte_missing
+      ->do_anonymous_page
+      ->inc_mm_counter
   
 static inline void inc_mm_counter(struct mm_struct *mm, int member)
 {
@@ -321,7 +325,7 @@ static int memcg_page_state_unit(int item)
 
 
 
-再看一下memory_cgrp_subsys cgroup子系统
+再看一下`memory_cgrp_subsys` cgroup子系统
 
 ```c
 struct cgroup_subsys memory_cgrp_subsys = {
@@ -463,26 +467,26 @@ __this_cpu_add(pn->lruvec_stats_percpu->state[idx],val);
 
 ```text
 __vmalloc_node_range
-  ->__vmalloc_area_node
-  ->mod_memcg_page_state
-  ->mod_memcg_state
-  ->__mod_memcg_state
-  ->__this_cpu_add(memcg->vmstats_percpu->state[idx], val);
+      ->__vmalloc_area_node
+      ->mod_memcg_page_state
+      ->mod_memcg_state
+      ->__mod_memcg_state
+      ->__this_cpu_add(memcg->vmstats_percpu->state[idx], val);
 ```
 
 当然还有被动的`do_page_fault`
 
 ```c
 do_page_fault
-  ->handle_mm_fault
-  ->__handle_mm_fault
-  ->handle_pte_fault
-  ->do_pte_missing
-  ->do_anonymous_page
-  ->mem_cgroup_charge
-  ->__mem_cgroup_charge
-  ->charge_memcg
-  ->mem_cgroup_charge_statistics
+      ->handle_mm_fault
+      ->__handle_mm_fault
+      ->handle_pte_fault
+      ->do_pte_missing
+      ->do_anonymous_page
+      ->mem_cgroup_charge
+      ->__mem_cgroup_charge
+      ->charge_memcg
+      ->mem_cgroup_charge_statistics
 
 static void mem_cgroup_charge_statistics(struct mem_cgroup *memcg,
 					 int nr_pages)
