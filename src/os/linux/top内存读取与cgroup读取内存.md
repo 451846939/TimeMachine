@@ -131,7 +131,7 @@ i = page_bytes; // from sysinfo.c, at lib init
 while(i > 1024) { i >>= 1; Pg2K_shft++; }
 ```
 
-在内核中该文件的实现
+在内核中该文件的实现如下
 
 ```c
 unsigned long task_statm(struct mm_struct *mm,
@@ -168,6 +168,36 @@ RES->resident=shared+MM_ANONPAGES
 
 
 
+`get_mm_counter`是如何读取的呢，函数定义如下主要读取的是`mm->rss_stat[member]`
+
+```c
+static inline unsigned long get_mm_counter(struct mm_struct *mm, int member)
+{
+	return percpu_counter_read_positive(&mm->rss_stat[member]);
+}
+```
+
+什么时候进行的计数呢流程如下:
+
+```c
+do_page_fault
+  			->handle_mm_fault
+  			->__handle_mm_fault
+  			->handle_pte_fault
+  			->do_pte_missing
+  			->do_anonymous_page
+  			->inc_mm_counter
+  
+static inline void inc_mm_counter(struct mm_struct *mm, int member)
+{
+	percpu_counter_inc(&mm->rss_stat[member]);
+
+	mm_trace_rss_stat(mm, member);
+}
+```
+
+
+
 至此我们也可以看到这种主要针对的是进程来进行统计计算
 
 
@@ -181,6 +211,9 @@ RES->resident=shared+MM_ANONPAGES
 对于stat文件背后调用的方法
 
 ```c
+memory_stat_show
+  ->memory_stat_format
+  ->memcg_stat_format
 static struct cftype memory_files[] = {	
   ....
 	{
@@ -189,30 +222,6 @@ static struct cftype memory_files[] = {
 	},
   .....
 }
-
-static int memory_stat_show(struct seq_file *m, void *v)
-{
-	struct mem_cgroup *memcg = mem_cgroup_from_seq(m);
-	char *buf = kmalloc(PAGE_SIZE, GFP_KERNEL);
-	struct seq_buf s;
-
-	if (!buf)
-		return -ENOMEM;
-	seq_buf_init(&s, buf, PAGE_SIZE);
-	memory_stat_format(memcg, &s);
-	seq_puts(m, buf);
-	kfree(buf);
-	return 0;
-}
-static void memory_stat_format(struct mem_cgroup *memcg, struct seq_buf *s)
-{
-	if (cgroup_subsys_on_dfl(memory_cgrp_subsys))
-		memcg_stat_format(memcg, s);
-	else
-		memcg1_stat_format(memcg, s);
-	WARN_ON_ONCE(seq_buf_has_overflowed(s));
-}
-
 static void memcg_stat_format(struct mem_cgroup *memcg, struct seq_buf *s)
 {
 	int i;
@@ -265,7 +274,7 @@ static void memcg_stat_format(struct mem_cgroup *memcg, struct seq_buf *s)
 	/* The above should easily fit into one page */
 	WARN_ON_ONCE(seq_buf_has_overflowed(s));
 }
-
+/*计算展示数值*/
 static inline unsigned long memcg_page_state_output(struct mem_cgroup *memcg,
 						    int item)
 {
