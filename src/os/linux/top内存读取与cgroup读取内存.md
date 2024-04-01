@@ -162,7 +162,7 @@ enum {
 
 可以看到计算如下
 
-**SHR->shared=MM_FILEPAGES+MM_SHMEMPAGES **
+**SHR->shared=MM_FILEPAGES+MM_SHMEMPAGES**
 
 **RES->resident=shared+MM_ANONPAGES**
 
