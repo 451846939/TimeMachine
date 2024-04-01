@@ -327,7 +327,7 @@ static int memcg_page_state_unit(int item)
 
 
 
-关键代码为`memcg_page_state_output * memcg_page_state_unit`如果`PAGE_SIZE`和上述一样都是4096那么换算mb的公式为`count*4096/1024/1024` ,`memcg_page_state_output`进行了`memcg->vmstats->state[idx]`的读取，那么我们是如何写入的呢
+关键代码为`memcg_page_state * memcg_page_state_unit`如果`PAGE_SIZE`和上述一样都是4096那么换算mb的公式为`count*4096/1024/1024` ,`memcg_page_state_output`进行了`memcg->vmstats->state[idx]`的读取，那么我们是如何写入的呢
 
 
 
