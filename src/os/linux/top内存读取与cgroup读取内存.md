@@ -463,26 +463,26 @@ __this_cpu_add(pn->lruvec_stats_percpu->state[idx],val);
 
 ```text
 __vmalloc_node_range
-								->__vmalloc_area_node
-								->mod_memcg_page_state
-								->mod_memcg_state
-								->__mod_memcg_state
-								->__this_cpu_add(memcg->vmstats_percpu->state[idx], val);
+  ->__vmalloc_area_node
+  ->mod_memcg_page_state
+  ->mod_memcg_state
+  ->__mod_memcg_state
+  ->__this_cpu_add(memcg->vmstats_percpu->state[idx], val);
 ```
 
 当然还有被动的`do_page_fault`
 
 ```c
 do_page_fault
-  			->handle_mm_fault
-  			->__handle_mm_fault
-  			->handle_pte_fault
-  			->do_pte_missing
-  			->do_anonymous_page
-  			->mem_cgroup_charge
-  			->__mem_cgroup_charge
-  			->charge_memcg
-  			->mem_cgroup_charge_statistics
+  ->handle_mm_fault
+  ->__handle_mm_fault
+  ->handle_pte_fault
+  ->do_pte_missing
+  ->do_anonymous_page
+  ->mem_cgroup_charge
+  ->__mem_cgroup_charge
+  ->charge_memcg
+  ->mem_cgroup_charge_statistics
 
 static void mem_cgroup_charge_statistics(struct mem_cgroup *memcg,
 					 int nr_pages)
